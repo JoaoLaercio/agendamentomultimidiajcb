@@ -1,0 +1,6 @@
+{
+  "name": "EduMídia - Agendamento Multimídia Escolar",
+  "description": "Sistema completo para agendamento de recursos multimídia (Data Show, TV, Chromebooks, Som, Cabos) e espaços pedagógicos (Biblioteca, Labin, Pátio) com controle de horários, turmas e professores.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
