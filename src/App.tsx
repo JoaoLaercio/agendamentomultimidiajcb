@@ -15,6 +15,8 @@ import {
   isSupabaseConfigured,
   saveBookingToSupabase,
   deleteBookingFromSupabase,
+  subscribeToBookingsRealtime,
+  syncAllBookingsToSupabase,
 } from './lib/supabase';
 import { toISODateString } from './utils/dateUtils';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
@@ -69,20 +71,39 @@ export default function App() {
     }
   }, [bookings]);
 
-  // Check Supabase status and optionally fetch remote records on mount
+  // Check Supabase status and subscribe to realtime updates
   useEffect(() => {
     const configured = isSupabaseConfigured();
     setIsSupabaseActive(configured);
 
+    let unsubscribe: (() => void) | null = null;
+
     if (configured) {
-      fetchBookingsFromSupabase().then(remoteBookings => {
+      fetchBookingsFromSupabase().then(async remoteBookings => {
         if (remoteBookings && remoteBookings.length > 0) {
           setBookings(remoteBookings);
           showToast('Sincronizado com Supabase em tempo real!', 'success');
+        } else if (remoteBookings && remoteBookings.length === 0 && bookings.length > 0) {
+          // Send initial bookings to Supabase so table has data
+          await syncAllBookingsToSupabase(bookings);
+          showToast('Agendamentos salvos no seu Supabase!', 'success');
         }
       });
+
+      unsubscribe = subscribeToBookingsRealtime(() => {
+        fetchBookingsFromSupabase().then(remoteBookings => {
+          if (remoteBookings) {
+            setBookings(remoteBookings);
+            showToast('Banco de dados atualizado em tempo real!', 'info');
+          }
+        });
+      });
     }
-  }, []);
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [isSupabaseActive]);
 
   const handleCredentialsUpdated = () => {
     const configured = isSupabaseConfigured();
@@ -91,6 +112,7 @@ export default function App() {
       fetchBookingsFromSupabase().then(remoteBookings => {
         if (remoteBookings && remoteBookings.length > 0) {
           setBookings(remoteBookings);
+          showToast('Dados do Supabase carregados com sucesso!', 'success');
         }
       });
     }
@@ -238,6 +260,8 @@ export default function App() {
           setBookingForVoucher(null);
           setIsPrintModalOpen(true);
         }}
+        onOpenIntegrationModal={() => setIsIntegrationModalOpen(true)}
+        isSupabaseActive={isSupabaseActive}
         totalBookingsCount={bookings.length}
         todayBookingsCount={todayBookingsCount}
       />
@@ -342,6 +366,8 @@ export default function App() {
         isOpen={isIntegrationModalOpen}
         onClose={() => setIsIntegrationModalOpen(false)}
         onCredentialsUpdated={handleCredentialsUpdated}
+        bookings={bookings}
+        onBookingsUpdated={setBookings}
       />
     </div>
   );

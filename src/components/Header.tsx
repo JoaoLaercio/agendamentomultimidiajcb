@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   CalendarDays,
   ListFilter,
@@ -7,6 +6,7 @@ import {
   Sparkles,
   Layers,
   GraduationCap,
+  Database,
 } from 'lucide-react';
 import { formatDateBR, getDayOfWeekName, toISODateString } from '../utils/dateUtils';
 
@@ -15,6 +15,8 @@ interface HeaderProps {
   onViewChange: (view: 'weekly' | 'daily' | 'catalog' | 'stats') => void;
   onOpenNewBooking: () => void;
   onOpenPrintModal: () => void;
+  onOpenIntegrationModal: () => void;
+  isSupabaseActive: boolean;
   totalBookingsCount: number;
   todayBookingsCount: number;
 }
@@ -24,6 +26,8 @@ export const Header: React.FC<HeaderProps> = ({
   onViewChange,
   onOpenNewBooking,
   onOpenPrintModal,
+  onOpenIntegrationModal,
+  isSupabaseActive,
   totalBookingsCount,
   todayBookingsCount,
 }) => {
@@ -80,6 +84,28 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Action Controls */}
         <div className="flex items-center flex-wrap gap-2.5">
+          <button
+            onClick={onOpenIntegrationModal}
+            className={`inline-flex items-center gap-2 px-3 py-2 text-xs sm:text-sm font-semibold rounded-lg border transition-colors shadow-xs ${
+              isSupabaseActive
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                : 'bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+            title="Configurar conexão e sincronização com o Supabase"
+          >
+            <Database
+              className={`w-4 h-4 ${
+                isSupabaseActive ? 'text-emerald-600' : 'text-slate-500'
+              }`}
+            />
+            <span className="hidden sm:inline">
+              {isSupabaseActive ? 'Supabase Conectado' : 'Conectar Supabase'}
+            </span>
+            {isSupabaseActive && (
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse hidden sm:inline-block" />
+            )}
+          </button>
+
           <button
             onClick={onOpenPrintModal}
             className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 hover:text-slate-900 transition-colors shadow-xs"

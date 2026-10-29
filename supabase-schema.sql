@@ -45,12 +45,31 @@ CREATE INDEX IF NOT EXISTS idx_bookings_status ON public.bookings(status);
 ALTER TABLE public.resources ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
 
--- 5. Políticas públicas de leitura e escrita (Permite agendamento na rede escolar)
-CREATE POLICY "Allow public read access on resources" 
+-- 5. Políticas de segurança (Remove se já existirem para evitar o erro 42710)
+DROP POLICY IF EXISTS "Public Read Resources" ON public.resources;
+DROP POLICY IF EXISTS "Allow public read access on resources" ON public.resources;
+DROP POLICY IF EXISTS "Recursos de Leitura Pública" ON public.resources;
+
+CREATE POLICY "Public Read Resources" 
 ON public.resources FOR SELECT USING (true);
 
-CREATE POLICY "Allow public all access on bookings" 
+DROP POLICY IF EXISTS "Public All Bookings" ON public.bookings;
+DROP POLICY IF EXISTS "Allow public all access on bookings" ON public.bookings;
+DROP POLICY IF EXISTS "Todos os Agendamentos Públicos" ON public.bookings;
+
+CREATE POLICY "Public All Bookings" 
 ON public.bookings FOR ALL USING (true);
+
+-- Habilitar replicação em tempo real para o Supabase Realtime
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.bookings;
+  EXCEPTION
+    WHEN duplicate_object THEN NULL;
+    WHEN others THEN NULL;
+  END;
+END $$;
 
 -- 6. Inserção dos 8 recursos padrão pedidos pelo sistema escolar
 INSERT INTO public.resources (id, name, category, description, total_quantity, icon, color, location, rules)

@@ -12,22 +12,30 @@ import {
   Code2,
   Terminal,
 } from 'lucide-react';
+import { Booking } from '../types';
 import {
   getSupabaseCredentials,
   saveSupabaseCredentials,
   testSupabaseConnection,
+  syncAllBookingsToSupabase,
+  fetchBookingsFromSupabase,
+  isSupabaseConfigured,
 } from '../lib/supabase';
 
 interface IntegrationModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCredentialsUpdated: () => void;
+  bookings: Booking[];
+  onBookingsUpdated: (bookings: Booking[]) => void;
 }
 
 export const IntegrationModal: React.FC<IntegrationModalProps> = ({
   isOpen,
   onClose,
   onCredentialsUpdated,
+  bookings,
+  onBookingsUpdated,
 }) => {
   const [activeTab, setActiveTab] = useState<'supabase' | 'github' | 'vercel'>('supabase');
 
@@ -35,24 +43,30 @@ export const IntegrationModal: React.FC<IntegrationModalProps> = ({
   const [url, setUrl] = useState(initialCreds.url);
   const [anonKey, setAnonKey] = useState(initialCreds.anonKey);
   const [testing, setTesting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [copiedSQL, setCopiedSQL] = useState(false);
   const [copiedGit, setCopiedGit] = useState(false);
 
   if (!isOpen) return null;
 
+  const isConfigured = Boolean(url && anonKey && url.startsWith('http'));
+
   const handleTestConnection = async () => {
-    if (!url || !anonKey) {
+    if (!url) {
       setTestResult({
         success: false,
-        message: 'Por favor, informe a URL e a Anon Key do Supabase.',
+        message: 'Por favor, informe a URL do seu projeto Supabase (ou cole o link do dashboard).',
       });
       return;
     }
     setTesting(true);
     setTestResult(null);
-    const res = await testSupabaseConnection(url, anonKey);
+    const res = await testSupabaseConnection(url.trim(), anonKey.trim());
     setTesting(false);
+    if (res.normalizedUrl) {
+      setUrl(res.normalizedUrl);
+    }
     setTestResult(res);
   };
 
@@ -61,8 +75,60 @@ export const IntegrationModal: React.FC<IntegrationModalProps> = ({
     onCredentialsUpdated();
     setTestResult({
       success: true,
-      message: 'Credenciais do Supabase salvas com sucesso! A aplicação agora sincronizará.',
+      message: 'Credenciais salvas com sucesso! A conexão com o Supabase está ativada.',
     });
+  };
+
+  const handleDisconnect = () => {
+    saveSupabaseCredentials('', '');
+    setUrl('');
+    setAnonKey('');
+    onCredentialsUpdated();
+    setTestResult({
+      success: true,
+      message: 'Desconectado do Supabase. A aplicação voltou para o modo de armazenamento local.',
+    });
+  };
+
+  const handleSyncToSupabase = async () => {
+    saveSupabaseCredentials(url, anonKey);
+    setSyncing(true);
+    setTestResult(null);
+    const res = await syncAllBookingsToSupabase(bookings);
+    setSyncing(false);
+    if (res.success) {
+      setTestResult({
+        success: true,
+        message: `${res.count} agendamento(s) enviados com sucesso para o banco do Supabase!`,
+      });
+      onCredentialsUpdated();
+    } else {
+      setTestResult({
+        success: false,
+        message: `Falha ao sincronizar: ${res.error}. Certifique-se de que executou o script SQL das tabelas no Supabase.`,
+      });
+    }
+  };
+
+  const handlePullFromSupabase = async () => {
+    saveSupabaseCredentials(url, anonKey);
+    setSyncing(true);
+    setTestResult(null);
+    const remote = await fetchBookingsFromSupabase();
+    setSyncing(false);
+    if (remote) {
+      onBookingsUpdated(remote);
+      setTestResult({
+        success: true,
+        message: `${remote.length} agendamento(s) carregados do Supabase com sucesso!`,
+      });
+      onCredentialsUpdated();
+    } else {
+      setTestResult({
+        success: false,
+        message: 'Não foi possível buscar agendamentos do Supabase. Verifique as credenciais ou as tabelas.',
+      });
+    }
   };
 
   const sqlSchemaCode = `-- SCRIPT SUPABASE PARA EDUMÍDIA
@@ -87,6 +153,8 @@ CREATE TABLE IF NOT EXISTS public.bookings (
   day_of_week TEXT NOT NULL,
   shift TEXT NOT NULL,
   periods JSONB NOT NULL DEFAULT '[]'::jsonb,
+  start_time TEXT,
+  end_time TEXT,
   resource_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
   resource_details JSONB DEFAULT '{}'::jsonb,
   theme TEXT NOT NULL,
@@ -95,11 +163,33 @@ CREATE TABLE IF NOT EXISTS public.bookings (
   created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
+-- Habilitar RLS
 ALTER TABLE public.resources ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
 
+-- Remove políticas anteriores se existirem (evita erro 42710)
+DROP POLICY IF EXISTS "Public Read Resources" ON public.resources;
+DROP POLICY IF EXISTS "Allow public read access on resources" ON public.resources;
+DROP POLICY IF EXISTS "Recursos de Leitura Pública" ON public.resources;
 CREATE POLICY "Public Read Resources" ON public.resources FOR SELECT USING (true);
-CREATE POLICY "Public All Bookings" ON public.bookings FOR ALL USING (true);`;
+
+DROP POLICY IF EXISTS "Public All Bookings" ON public.bookings;
+DROP POLICY IF EXISTS "Allow public all access on bookings" ON public.bookings;
+DROP POLICY IF EXISTS "Todos os Agendamentos Públicos" ON public.bookings;
+CREATE POLICY "Public All Bookings" ON public.bookings FOR ALL USING (true);
+
+-- Inserir os recursos padrão
+INSERT INTO public.resources (id, name, category, description, total_quantity, icon, color, location, rules)
+VALUES
+  ('datashow', 'Data Show (Projetor)', 'equipment', 'Projetor multimídia EPSON Full HD com controle e cabos inclusos.', 6, 'Projector', 'blue', 'Sala dos Professores / Multimídia', 'Retirar 10 min antes da aula. Devolver na maleta.'),
+  ('cabos', 'Kit de Cabos & Conectores', 'equipment', 'Kits com cabo HDMI (3m/5m), VGA, adaptador USB-C e extensão elétrica.', 10, 'Cable', 'amber', 'Armário de Mídia - Gaveta 02', 'Enrolar cabos sem torcer ao devolver.'),
+  ('tv', 'TV Smart Móvel (55")', 'equipment', 'Smart TV 4K 55" em suporte com rodinhas e som estéreo integrado.', 3, 'Tv', 'indigo', 'Depósito de Recursos', 'Travar rodinhas ao posicionar na sala.'),
+  ('caixa_som', 'Caixa de Som Amplificada', 'equipment', 'Caixa portátil 300W bluetooth com 2 microfones sem fio.', 4, 'Speaker', 'emerald', 'Coordenação Pedagógica', 'Conferir pilhas dos microfones na devolução.'),
+  ('chromebook', 'Carrinho de Chromebooks', 'equipment', 'Gabinete de recarga móvel com 36 Chromebooks para alunos.', 2, 'Laptop', 'sky', 'Laboratório de Mídias', 'Conectar ao cabo de carga ao devolver.'),
+  ('biblioteca', 'Biblioteca Escolar', 'space', 'Espaço climatizado com mesas de estudo e acervo literário.', 1, 'BookOpen', 'purple', 'Bloco A - Térreo', 'Capacidade máx. 45 alunos. Manter silêncio moderado.'),
+  ('patio', 'Pátio Central Escolar', 'space', 'Área ampla coberta para feiras culturais, palestras e eventos.', 1, 'Users', 'rose', 'Área Central de Convivência', 'Avisar apoio com antecedência para cadeiras.'),
+  ('labin', 'Labin (Lab. de Informática)', 'space', 'Laboratório de informática educativa com 32 computadores com internet.', 1, 'MonitorCheck', 'teal', 'Bloco B - 1º Andar', 'Proibido alimentos/bebidas. Desligar máquinas.')
+ON CONFLICT (id) DO NOTHING;`;
 
   const copySQL = () => {
     navigator.clipboard.writeText(sqlSchemaCode);
@@ -195,11 +285,56 @@ git push -u origin main`;
           {/* SUPABASE TAB */}
           {activeTab === 'supabase' && (
             <div className="space-y-4">
-              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 text-xs text-emerald-900">
-                <strong className="font-bold block mb-1">Como conectar ao Supabase:</strong>
-                1. Crie um projeto gratuito em <strong>supabase.com</strong>.<br />
-                2. Vá em <strong>Project Settings → API</strong> e copie a <em>Project URL</em> e a <em>anon public key</em>.<br />
-                3. Cole abaixo para ativar sincronização instantânea em tempo real!
+              {/* Quick Status Pill */}
+              <div className="flex items-center justify-between p-3 rounded-xl border bg-slate-50 border-slate-200">
+                <div className="flex items-center gap-2.5">
+                  <span
+                    className={`w-3 h-3 rounded-full ${
+                      isConfigured ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+                    }`}
+                  />
+                  <div>
+                    <span className="text-xs font-bold text-slate-800">
+                      Status da Conexão:{' '}
+                      <span className={isConfigured ? 'text-emerald-700' : 'text-slate-500'}>
+                        {isConfigured ? 'Supabase Ativo (Tempo Real Habilitado)' : 'Modo Armazenamento Local'}
+                      </span>
+                    </span>
+                    <p className="text-[11px] text-slate-500">
+                      {isConfigured
+                        ? 'Novos agendamentos são sincronizados automaticamente no PostgreSQL do Supabase.'
+                        : 'Os agendamentos ficam salvos no navegador até você conectar o Supabase.'}
+                    </p>
+                  </div>
+                </div>
+
+                {isConfigured && (
+                  <button
+                    type="button"
+                    onClick={handleDisconnect}
+                    className="text-[11px] text-red-600 hover:text-red-800 font-semibold px-2 py-1 border border-red-200 rounded hover:bg-red-50 transition-colors"
+                  >
+                    Desconectar
+                  </button>
+                )}
+              </div>
+
+              {/* Instructions 3-Step Guide */}
+              <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-3.5 text-xs text-emerald-950 space-y-2">
+                <strong className="font-extrabold text-emerald-900 block text-xs">
+                  Passo a Passo Rápido para Conectar:
+                </strong>
+                <ol className="list-decimal list-inside space-y-1 text-[11px] text-emerald-900 leading-relaxed">
+                  <li>
+                    Acesse <strong>supabase.com</strong>, crie sua conta gratuita e um novo projeto.
+                  </li>
+                  <li>
+                    No menu lateral do Supabase, clique em <strong>SQL Editor</strong>, cole o código do <em>Script SQL</em> abaixo e clique em <strong>Run</strong>.
+                  </li>
+                  <li>
+                    Vá em <strong>Project Settings → API</strong>, copie a <strong>Project URL</strong> e a <strong>anon public key</strong> e cole nos campos abaixo.
+                  </li>
+                </ol>
               </div>
 
               {testResult && (
@@ -215,54 +350,87 @@ git push -u origin main`;
                   ) : (
                     <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
                   )}
-                  <span>{testResult.message}</span>
+                  <span className="leading-tight">{testResult.message}</span>
                 </div>
               )}
 
+              {/* Credentials Form */}
               <div className="space-y-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Supabase Project URL:
+                    1. Supabase Project URL:
                   </label>
                   <input
-                    type="url"
-                    placeholder="https://xyzabcdefg.supabase.co"
+                    type="text"
+                    placeholder="https://seu-projeto.supabase.co ou o link do dashboard"
                     value={url}
                     onChange={e => setUrl(e.target.value)}
-                    className="w-full px-3 py-2 text-xs sm:text-sm font-mono border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    className="w-full px-3 py-2 text-xs sm:text-sm font-mono border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-slate-50/40"
                   />
+                  <span className="text-[11px] text-slate-500 mt-0.5 block">
+                    Aceita tanto <code>https://xxxx.supabase.co</code> quanto o link da barra do navegador (ex: <code>https://supabase.com/dashboard/project/xxxx</code>).
+                  </span>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Supabase Anon Public Key:
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700">
+                      2. Supabase Anon Public Key:
+                    </label>
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                      ✓ Chave configurada automaticamente
+                    </span>
+                  </div>
                   <input
-                    type="password"
-                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    type="text"
+                    placeholder="sb_publishable_... ou eyJ..."
                     value={anonKey}
                     onChange={e => setAnonKey(e.target.value)}
-                    className="w-full px-3 py-2 text-xs sm:text-sm font-mono border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    className="w-full px-3 py-2 text-xs sm:text-sm font-mono border border-emerald-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-emerald-50/20"
                   />
                 </div>
 
-                <div className="flex items-center gap-2 pt-1">
+                <div className="flex flex-wrap items-center gap-2 pt-1">
                   <button
                     type="button"
                     onClick={handleTestConnection}
                     disabled={testing}
                     className="px-3.5 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-200"
                   >
-                    {testing ? 'Testando conexão...' : 'Testar Conexão'}
+                    {testing ? 'Testando...' : 'Testar Conexão'}
                   </button>
 
                   <button
                     type="button"
                     onClick={handleSaveCredentials}
-                    className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-xs ml-auto"
+                    className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-xs"
                   >
-                    Salvar & Sincronizar
+                    Salvar Credenciais
                   </button>
+
+                  {isConfigured && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleSyncToSupabase}
+                        disabled={syncing}
+                        className="px-3 py-2 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded-lg transition-colors"
+                        title="Envia todos os agendamentos salvos localmente para o Supabase"
+                      >
+                        {syncing ? 'Sincronizando...' : `Subir ${bookings.length} Agendamentos Locais`}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handlePullFromSupabase}
+                        disabled={syncing}
+                        className="px-3 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-300"
+                        title="Carrega os agendamentos mais recentes do Supabase"
+                      >
+                        Puxar do Supabase
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -271,7 +439,7 @@ git push -u origin main`;
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                     <Code2 className="w-4 h-4 text-emerald-600" />
-                    Script SQL para criar as Tabelas no Supabase:
+                    Script SQL para executar no Supabase (SQL Editor):
                   </span>
                   <button
                     onClick={copySQL}
@@ -279,20 +447,20 @@ git push -u origin main`;
                   >
                     {copiedSQL ? (
                       <>
-                        <Check className="w-3.5 h-3.5" /> Copiado!
+                        <Check className="w-3.5 h-3.5" /> Copiado com sucesso!
                       </>
                     ) : (
                       <>
-                        <Copy className="w-3.5 h-3.5" /> Copiar SQL
+                        <Copy className="w-3.5 h-3.5" /> Copiar Código SQL
                       </>
                     )}
                   </button>
                 </div>
-                <div className="bg-slate-900 rounded-xl p-3 text-slate-300 text-[11px] font-mono max-h-36 overflow-y-auto leading-relaxed border border-slate-800">
+                <div className="bg-slate-900 rounded-xl p-3 text-emerald-300 text-[11px] font-mono max-h-40 overflow-y-auto leading-relaxed border border-slate-800">
                   <pre>{sqlSchemaCode}</pre>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  O arquivo completo também está salvo na raiz do projeto como <code>supabase-schema.sql</code>.
+                  Dica: Este script cria as tabelas <code>bookings</code> e <code>resources</code> com Row Level Security (RLS) habilitado e permissões públicas de agendamento escolar.
                 </p>
               </div>
             </div>
