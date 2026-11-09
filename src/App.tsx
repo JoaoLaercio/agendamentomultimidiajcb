@@ -53,6 +53,16 @@ export default function App() {
 
   const [isIntegrationModalOpen, setIsIntegrationModalOpen] = useState(false);
 
+  // In-app confirmation dialog (replaces window.confirm for iframe safety)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    confirmStyle?: 'danger' | 'primary';
+    onConfirm: () => void;
+  } | null>(null);
+
   // Toast notification
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
 
@@ -266,42 +276,63 @@ export default function App() {
 
   // Delete Booking
   const handleDeleteBooking = async (bookingId: string) => {
-    if (window.confirm('Tem certeza que deseja cancelar e excluir este agendamento?')) {
-      const updatedList = bookings.filter(b => b.id !== bookingId);
-      setBookings(updatedList);
-      try {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedList));
-      } catch (e) {
-        console.warn('Erro localStorage:', e);
-      }
-      if (selectedBookingForDetails?.id === bookingId) {
-        setSelectedBookingForDetails(null);
-      }
-      showToast('Agendamento excluído com sucesso.', 'info');
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Excluir Agendamento',
+      message: 'Tem certeza que deseja cancelar e excluir este agendamento? Esta ação não pode ser desfeita.',
+      confirmText: 'Sim, Excluir',
+      confirmStyle: 'danger',
+      onConfirm: async () => {
+        const updatedList = bookings.filter(b => b.id !== bookingId);
+        setBookings(updatedList);
+        try {
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedList));
+        } catch (e) {
+          console.warn('Erro localStorage:', e);
+        }
+        if (selectedBookingForDetails?.id === bookingId) {
+          setSelectedBookingForDetails(null);
+        }
+        showToast('Agendamento excluído com sucesso.', 'info');
 
-      if (isSupabaseConfigured() && supabaseStatus !== 'disconnected') {
-        deleteBookingFromSupabase(bookingId).catch(err => {
-          console.warn('[EduMídia] Falha silenciosa ao deletar remoto:', err);
-        });
-      }
-    }
+        if (isSupabaseConfigured() && supabaseStatus !== 'disconnected') {
+          deleteBookingFromSupabase(bookingId).catch(err => {
+            console.warn('[EduMídia] Falha silenciosa ao deletar remoto:', err);
+          });
+        }
+      },
+    });
   };
 
   // Reset to Initial Mock Data
   const handleResetData = () => {
-    if (window.confirm('Restaurar dados de exemplo do calendário escolar?')) {
-      const initial = generateInitialBookings();
-      setBookings(initial);
-      showToast('Dados de exemplo restaurados com sucesso!', 'success');
-    }
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Restaurar Dados de Exemplo',
+      message: 'Deseja restaurar os agendamentos e horários padrão do calendário escolar?',
+      confirmText: 'Restaurar',
+      confirmStyle: 'primary',
+      onConfirm: () => {
+        const initial = generateInitialBookings();
+        setBookings(initial);
+        showToast('Dados de exemplo restaurados com sucesso!', 'success');
+      },
+    });
   };
 
   // Clear All Data
   const handleClearAll = () => {
-    if (window.confirm('ATENÇÃO: Deseja apagar todos os agendamentos registrados?')) {
-      setBookings([]);
-      showToast('Todos os agendamentos foram removidos.', 'info');
-    }
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Apagar Todos os Agendamentos',
+      message: 'ATENÇÃO: Deseja apagar todos os agendamentos registrados no sistema?',
+      confirmText: 'Apagar Tudo',
+      confirmStyle: 'danger',
+      onConfirm: () => {
+        setBookings([]);
+        showToast('Todos os agendamentos foram removidos.', 'info');
+      },
+    });
   };
 
   // Export JSON Backup
@@ -475,6 +506,57 @@ export default function App() {
         bookings={bookings}
         onBookingsUpdated={setBookings}
       />
+
+      {/* In-App Confirmation Dialog (Replaces window.confirm for iframe safety) */}
+      {confirmDialog?.isOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="p-5 space-y-3">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                    confirmDialog.confirmStyle === 'danger'
+                      ? 'bg-red-100 text-red-600'
+                      : 'bg-blue-100 text-blue-600'
+                  }`}
+                >
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <h3 className="text-base font-extrabold text-slate-900">
+                  {confirmDialog.title}
+                </h3>
+              </div>
+              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed pl-1">
+                {confirmDialog.message}
+              </p>
+              <div className="pt-3 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDialog(null)}
+                  className="px-4 py-2 text-xs sm:text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const action = confirmDialog.onConfirm;
+                    setConfirmDialog(null);
+                    action();
+                  }}
+                  className={`px-4 py-2 text-xs sm:text-sm font-bold text-white rounded-xl shadow-xs transition-colors ${
+                    confirmDialog.confirmStyle === 'danger'
+                      ? 'bg-red-600 hover:bg-red-700'
+                      : 'bg-blue-600 hover:bg-blue-700'
+                  }`}
+                >
+                  {confirmDialog.confirmText || 'Confirmar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
