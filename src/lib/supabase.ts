@@ -83,7 +83,7 @@ export function getSupabaseClient(): SupabaseClient | null {
     });
     return cachedClient;
   } catch (err) {
-    console.error('Falha ao inicializar cliente Supabase:', err);
+    console.warn('Falha ao inicializar cliente Supabase:', err);
     return null;
   }
 }
@@ -93,10 +93,26 @@ export function isSupabaseConfigured(): boolean {
   return Boolean(url && anonKey && url.startsWith('http'));
 }
 
+export function isNetworkFailure(error: any): boolean {
+  if (!error) return false;
+  const msg = typeof error === 'string' ? error : (error.message || error.details || String(error));
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes('failed to fetch') ||
+    lower.includes('network') ||
+    lower.includes('fetch') ||
+    lower.includes('abort') ||
+    lower.includes('load failed') ||
+    lower.includes('cors') ||
+    lower.includes('err_connection') ||
+    lower.includes('timeout')
+  );
+}
+
 export async function testSupabaseConnection(
   rawUrl: string,
   rawAnonKey: string
-): Promise<{ success: boolean; message: string; normalizedUrl?: string }> {
+): Promise<{ success: boolean; message: string; normalizedUrl?: string; isOffline?: boolean }> {
   try {
     const url = normalizeSupabaseUrl(rawUrl);
     const anonKey = rawAnonKey.trim() || DEFAULT_ANON_KEY;
@@ -104,21 +120,28 @@ export async function testSupabaseConnection(
     if (!url.startsWith('https://') && !url.startsWith('http://')) {
       return {
         success: false,
-        message: 'Por favor, informe a Project URL do Supabase (ex: https://seu-projeto.supabase.co ou o link do dashboard)',
+        message: 'Por favor, informe a URL do projeto Supabase (ex: https://seu-projeto.supabase.co)',
       };
     }
     const client = createClient(url, anonKey);
-    const { data, error } = await client.from('resources').select('id').limit(1);
+    const { data: _data, error } = await client.from('resources').select('id').limit(1);
 
     if (error) {
       if (error.code === '42P01') {
         return {
           success: true,
           message:
-            'Conectado com sucesso ao Supabase! Mas a tabela "resources" ainda não existe. Execute o script SQL no Supabase para criá-la.',
+            'Conectado com sucesso ao Supabase! A tabela "resources" ainda não existe. Execute o script SQL no Supabase para criá-la.',
         };
       }
-      return { success: false, message: `Erro ao testar: ${error.message}` };
+      const isNet = isNetworkFailure(error);
+      return {
+        success: false,
+        isOffline: isNet,
+        message: isNet
+          ? 'Servidor Supabase indisponível no momento (rede/CORS ou projeto pausado). O sistema continuará funcionando perfeitamente em modo local.'
+          : `Aviso do Supabase: ${error.message}`,
+      };
     }
 
     return {
@@ -126,9 +149,13 @@ export async function testSupabaseConnection(
       message: 'Conectado com sucesso ao Supabase! Tabelas prontas para sincronização.',
     };
   } catch (err: any) {
+    const isNet = isNetworkFailure(err);
     return {
       success: false,
-      message: `Erro de conexão: ${err?.message || 'Falha de rede'}`,
+      isOffline: isNet,
+      message: isNet
+        ? 'Servidor Supabase offline ou inacessível no momento. O app continua funcionando localmente.'
+        : `Erro de conexão: ${err?.message || 'Falha de rede'}`,
     };
   }
 }
@@ -144,7 +171,8 @@ export async function fetchBookingsFromSupabase(): Promise<Booking[] | null> {
       .order('date', { ascending: true });
 
     if (error) {
-      console.warn('Erro ao buscar do Supabase:', error.message);
+      const isNet = isNetworkFailure(error);
+      console.warn(`[EduMídia] ${isNet ? 'Supabase indisponível (offline)' : 'Aviso ao buscar'}:`, error.message);
       return null;
     }
 
@@ -167,15 +195,24 @@ export async function fetchBookingsFromSupabase(): Promise<Booking[] | null> {
       status: row.status,
       createdAt: row.created_at,
     }));
-  } catch (err) {
-    console.error('Falha ao sincronizar com Supabase:', err);
+  } catch (err: any) {
+    const isNet = isNetworkFailure(err);
+    console.warn(`[EduMídia] ${isNet ? 'Supabase offline durante consulta' : 'Aviso de sincronização'}:`, err?.message || err);
     return null;
   }
 }
 
-export async function saveBookingToSupabase(booking: Booking): Promise<boolean> {
+export interface SaveBookingResult {
+  success: boolean;
+  isOffline?: boolean;
+  error?: string;
+}
+
+export async function saveBookingToSupabase(booking: Booking): Promise<SaveBookingResult> {
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client) {
+    return { success: false, isOffline: true, error: 'Cliente Supabase não configurado' };
+  }
 
   try {
     const payload = {
@@ -196,41 +233,47 @@ export async function saveBookingToSupabase(booking: Booking): Promise<boolean> 
       created_at: booking.createdAt,
     };
 
-    const { error } = await client.from('bookings').upsert(payload);
+    const { error } = await client.from('bookings').upsert(payload, { onConflict: 'id' });
     if (error) {
-      console.error('Erro ao salvar no Supabase:', error.message);
-      return false;
+      const isNet = isNetworkFailure(error);
+      console.warn(`[EduMídia] ${isNet ? 'Supabase offline/inalcançável' : 'Aviso ao salvar'}:`, error.message);
+      return { success: false, isOffline: isNet, error: error.message };
     }
-    return true;
-  } catch (err) {
-    console.error('Exceção ao salvar no Supabase:', err);
-    return false;
+    return { success: true };
+  } catch (err: any) {
+    const isNet = isNetworkFailure(err);
+    console.warn(`[EduMídia] ${isNet ? 'Supabase offline/inalcançável' : 'Aviso ao salvar'}:`, err?.message || err);
+    return { success: false, isOffline: isNet, error: err?.message || 'Falha de conexão' };
   }
 }
 
-export async function deleteBookingFromSupabase(bookingId: string): Promise<boolean> {
+export async function deleteBookingFromSupabase(bookingId: string): Promise<SaveBookingResult> {
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client) {
+    return { success: false, isOffline: true, error: 'Cliente Supabase não configurado' };
+  }
 
   try {
     const { error } = await client.from('bookings').delete().eq('id', bookingId);
     if (error) {
-      console.error('Erro ao deletar do Supabase:', error.message);
-      return false;
+      const isNet = isNetworkFailure(error);
+      console.warn(`[EduMídia] ${isNet ? 'Supabase offline ao excluir' : 'Aviso ao excluir'}:`, error.message);
+      return { success: false, isOffline: isNet, error: error.message };
     }
-    return true;
-  } catch (err) {
-    console.error('Exceção ao deletar do Supabase:', err);
-    return false;
+    return { success: true };
+  } catch (err: any) {
+    const isNet = isNetworkFailure(err);
+    console.warn(`[EduMídia] ${isNet ? 'Supabase offline ao excluir' : 'Aviso ao excluir'}:`, err?.message || err);
+    return { success: false, isOffline: isNet, error: err?.message || 'Falha de conexão' };
   }
 }
 
 export async function syncAllBookingsToSupabase(
   bookings: Booking[]
-): Promise<{ success: boolean; count: number; error?: string }> {
+): Promise<{ success: boolean; count: number; error?: string; isOffline?: boolean }> {
   const client = getSupabaseClient();
   if (!client) {
-    return { success: false, count: 0, error: 'Cliente Supabase não configurado' };
+    return { success: false, count: 0, error: 'Cliente Supabase não configurado', isOffline: true };
   }
 
   try {
@@ -254,11 +297,15 @@ export async function syncAllBookingsToSupabase(
 
     const { error } = await client.from('bookings').upsert(payload, { onConflict: 'id' });
     if (error) {
-      return { success: false, count: 0, error: error.message };
+      const isNet = isNetworkFailure(error);
+      console.warn(`[EduMídia] ${isNet ? 'Supabase offline durante sincronização geral' : 'Aviso'}:`, error.message);
+      return { success: false, count: 0, error: error.message, isOffline: isNet };
     }
     return { success: true, count: payload.length };
   } catch (err: any) {
-    return { success: false, count: 0, error: err?.message || 'Erro inesperado' };
+    const isNet = isNetworkFailure(err);
+    console.warn(`[EduMídia] ${isNet ? 'Supabase offline durante sincronização geral' : 'Aviso'}:`, err?.message || err);
+    return { success: false, count: 0, error: err?.message || 'Erro inesperado', isOffline: isNet };
   }
 }
 
@@ -281,7 +328,11 @@ export function subscribeToBookingsRealtime(
       .subscribe();
 
     return () => {
-      client.removeChannel(channel);
+      try {
+        client.removeChannel(channel);
+      } catch (e) {
+        console.warn('Erro ao remover canal Realtime:', e);
+      }
     };
   } catch (err) {
     console.warn('Realtime subscription not supported or failed:', err);

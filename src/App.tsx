@@ -38,6 +38,7 @@ export default function App() {
   });
 
   const [currentView, setCurrentView] = useState<'weekly' | 'daily' | 'catalog' | 'stats'>('weekly');
+  const [supabaseStatus, setSupabaseStatus] = useState<'connected' | 'offline' | 'disconnected' | 'connecting'>('connecting');
   const [isSupabaseActive, setIsSupabaseActive] = useState<boolean>(false);
 
   // Modals state
@@ -67,75 +68,165 @@ export default function App() {
     try {
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(bookings));
     } catch (e) {
-      console.error('Erro ao salvar no localStorage:', e);
+      console.warn('Erro ao salvar no localStorage:', e);
     }
   }, [bookings]);
+
+  // Online / Offline window listeners
+  useEffect(() => {
+    const handleOnline = () => {
+      if (isSupabaseConfigured()) {
+        fetchBookingsFromSupabase().then(remoteBookings => {
+          if (remoteBookings) {
+            setIsSupabaseActive(true);
+            setSupabaseStatus('connected');
+          }
+        });
+      }
+    };
+    const handleOffline = () => {
+      setIsSupabaseActive(false);
+      setSupabaseStatus('offline');
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Check Supabase status and subscribe to realtime updates
   useEffect(() => {
     const configured = isSupabaseConfigured();
-    setIsSupabaseActive(configured);
+    if (!configured) {
+      setIsSupabaseActive(false);
+      setSupabaseStatus('disconnected');
+      return;
+    }
 
+    setSupabaseStatus('connecting');
     let unsubscribe: (() => void) | null = null;
 
-    if (configured) {
-      fetchBookingsFromSupabase().then(async remoteBookings => {
-        if (remoteBookings && remoteBookings.length > 0) {
-          setBookings(remoteBookings);
-          showToast('Sincronizado com Supabase em tempo real!', 'success');
-        } else if (remoteBookings && remoteBookings.length === 0 && bookings.length > 0) {
-          // Send initial bookings to Supabase so table has data
-          await syncAllBookingsToSupabase(bookings);
-          showToast('Agendamentos salvos no seu Supabase!', 'success');
+    fetchBookingsFromSupabase()
+      .then(async remoteBookings => {
+        if (remoteBookings !== null) {
+          setIsSupabaseActive(true);
+          setSupabaseStatus('connected');
+          if (remoteBookings.length > 0) {
+            setBookings(remoteBookings);
+            showToast('Conectado ao Supabase! Dados sincronizados.', 'success');
+          } else if (bookings.length > 0) {
+            // Send initial bookings to Supabase so table has data
+            await syncAllBookingsToSupabase(bookings);
+          }
+        } else {
+          // Supabase is unreachable/offline or paused
+          setIsSupabaseActive(false);
+          setSupabaseStatus('offline');
+          console.warn('[EduMídia] Supabase offline/inacessível no início. Operando em modo de dados local.');
         }
+      })
+      .catch(err => {
+        setIsSupabaseActive(false);
+        setSupabaseStatus('offline');
+        console.warn('[EduMídia] Falha de conexão inicial com Supabase:', err);
       });
 
-      unsubscribe = subscribeToBookingsRealtime(() => {
-        fetchBookingsFromSupabase().then(remoteBookings => {
-          if (remoteBookings) {
-            setBookings(remoteBookings);
-            showToast('Banco de dados atualizado em tempo real!', 'info');
-          }
-        });
+    unsubscribe = subscribeToBookingsRealtime(() => {
+      fetchBookingsFromSupabase().then(remoteBookings => {
+        if (remoteBookings) {
+          setBookings(remoteBookings);
+          showToast('Banco de dados atualizado em tempo real!', 'info');
+        }
       });
-    }
+    });
 
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [isSupabaseActive]);
+  }, []);
 
   const handleCredentialsUpdated = () => {
     const configured = isSupabaseConfigured();
-    setIsSupabaseActive(configured);
-    if (configured) {
-      fetchBookingsFromSupabase().then(remoteBookings => {
-        if (remoteBookings && remoteBookings.length > 0) {
+    if (!configured) {
+      setIsSupabaseActive(false);
+      setSupabaseStatus('disconnected');
+      return;
+    }
+
+    setSupabaseStatus('connecting');
+    fetchBookingsFromSupabase().then(remoteBookings => {
+      if (remoteBookings !== null) {
+        setIsSupabaseActive(true);
+        setSupabaseStatus('connected');
+        if (remoteBookings.length > 0) {
           setBookings(remoteBookings);
           showToast('Dados do Supabase carregados com sucesso!', 'success');
         }
-      });
-    }
+      } else {
+        setIsSupabaseActive(false);
+        setSupabaseStatus('offline');
+      }
+    });
   };
 
-  // Create or Update Booking
-  const handleSaveBooking = async (savedBooking: Booking) => {
-    const exists = bookings.some(b => b.id === savedBooking.id);
-    let updatedList: Booking[];
+  // Create or Update Booking (single or multiple classes at once)
+  // Local-first: immediately persists to state & LocalStorage, then syncs remotely
+  const handleSaveBooking = async (saved: Booking | Booking[]) => {
+    const itemsToSave = Array.isArray(saved) ? saved : [saved];
+    let updatedList = [...bookings];
 
-    if (exists) {
-      updatedList = bookings.map(b => (b.id === savedBooking.id ? savedBooking : b));
-      showToast(`Agendamento de ${savedBooking.teacherName} atualizado com sucesso!`, 'success');
-    } else {
-      updatedList = [savedBooking, ...bookings];
-      showToast(`Agendamento realizado para ${savedBooking.classroom} (${savedBooking.teacherName})!`, 'success');
+    for (const item of itemsToSave) {
+      const existsIndex = updatedList.findIndex(b => b.id === item.id);
+      if (existsIndex >= 0) {
+        updatedList[existsIndex] = item;
+      } else {
+        updatedList.unshift(item);
+      }
     }
 
+    // 1. Immediately commit locally for instant responsiveness & reliability
     setBookings(updatedList);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedList));
+    } catch (e) {
+      console.warn('Erro ao salvar no localStorage:', e);
+    }
 
-    // Sync with Supabase if active
-    if (isSupabaseActive) {
-      saveBookingToSupabase(savedBooking);
+    // 2. Clear visual confirmation for user
+    if (itemsToSave.length > 1) {
+      showToast(`${itemsToSave.length} agendamentos criados com sucesso para as turmas selecionadas!`, 'success');
+    } else {
+      const single = itemsToSave[0];
+      const isExisting = bookings.some(b => b.id === single.id);
+      if (isExisting) {
+        showToast(`Agendamento de ${single.teacherName} atualizado com sucesso!`, 'success');
+      } else {
+        showToast(`Agendamento realizado para Turma ${single.classroom} (${single.teacherName})!`, 'success');
+      }
+    }
+
+    // 3. Background remote sync (failsafe, never throws or halts user experience)
+    if (isSupabaseConfigured() && supabaseStatus !== 'disconnected') {
+      (async () => {
+        let allSuccess = true;
+        for (const item of itemsToSave) {
+          const res = await saveBookingToSupabase(item);
+          if (!res.success) {
+            allSuccess = false;
+          }
+        }
+        if (allSuccess) {
+          setIsSupabaseActive(true);
+          setSupabaseStatus('connected');
+        } else {
+          setIsSupabaseActive(false);
+          setSupabaseStatus('offline');
+        }
+      })().catch(err => {
+        console.warn('[EduMídia] Sincronização em segundo plano adiada:', err);
+      });
     }
   };
 
@@ -147,6 +238,11 @@ export default function App() {
     const updated = { ...target, status: newStatus };
     const updatedList = bookings.map(b => (b.id === bookingId ? updated : b));
     setBookings(updatedList);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedList));
+    } catch (e) {
+      console.warn('Erro localStorage:', e);
+    }
 
     if (selectedBookingForDetails?.id === bookingId) {
       setSelectedBookingForDetails(updated);
@@ -161,8 +257,10 @@ export default function App() {
 
     showToast(`Status alterado: ${statusLabels[newStatus]}`, 'info');
 
-    if (isSupabaseActive) {
-      saveBookingToSupabase(updated);
+    if (isSupabaseConfigured() && supabaseStatus !== 'disconnected') {
+      saveBookingToSupabase(updated).catch(err => {
+        console.warn('[EduMídia] Falha silenciosa ao sincronizar status:', err);
+      });
     }
   };
 
@@ -171,13 +269,20 @@ export default function App() {
     if (window.confirm('Tem certeza que deseja cancelar e excluir este agendamento?')) {
       const updatedList = bookings.filter(b => b.id !== bookingId);
       setBookings(updatedList);
+      try {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedList));
+      } catch (e) {
+        console.warn('Erro localStorage:', e);
+      }
       if (selectedBookingForDetails?.id === bookingId) {
         setSelectedBookingForDetails(null);
       }
       showToast('Agendamento excluído com sucesso.', 'info');
 
-      if (isSupabaseActive) {
-        deleteBookingFromSupabase(bookingId);
+      if (isSupabaseConfigured() && supabaseStatus !== 'disconnected') {
+        deleteBookingFromSupabase(bookingId).catch(err => {
+          console.warn('[EduMídia] Falha silenciosa ao deletar remoto:', err);
+        });
       }
     }
   };
@@ -262,6 +367,7 @@ export default function App() {
         }}
         onOpenIntegrationModal={() => setIsIntegrationModalOpen(true)}
         isSupabaseActive={isSupabaseActive}
+        supabaseStatus={supabaseStatus}
         totalBookingsCount={bookings.length}
         todayBookingsCount={todayBookingsCount}
       />

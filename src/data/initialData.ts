@@ -1,4 +1,4 @@
-import { Booking, PeriodSlot, Resource } from '../types';
+import { Booking, PeriodSlot, Resource, ShiftType } from '../types';
 import { getDayOfWeekName, toISODateString } from '../utils/dateUtils';
 
 export const INITIAL_RESOURCES: Resource[] = [
@@ -115,22 +115,26 @@ export const PERIOD_SLOTS: PeriodSlot[] = [
   { id: 'not_4', label: '4ª Aula', timeRange: '21:30 - 22:15', shift: 'noturno' },
 ];
 
+export const CLASSES_BY_SHIFT: Record<ShiftType, string[]> = {
+  matutino: ['13.01', '14.01', '23.01', '24.01', '33.01', '34.01'],
+  vespertino: ['62.01', '62.02', '72.01', '82.01', '92.01'],
+  noturno: ['27.01', '46.01'],
+  integral: [],
+};
+
 export const COMMON_CLASSES = [
-  '6º Ano A',
-  '6º Ano B',
-  '7º Ano A',
-  '7º Ano B',
-  '8º Ano A',
-  '8º Ano B',
-  '9º Ano A',
-  '9º Ano B',
-  '1ª Série EM - A',
-  '1ª Série EM - B',
-  '2ª Série EM - A',
-  '2ª Série EM - B',
-  '3ª Série EM - Terceirão',
-  'Turma EJA - Noite',
+  ...CLASSES_BY_SHIFT.matutino,
+  ...CLASSES_BY_SHIFT.vespertino,
+  ...CLASSES_BY_SHIFT.noturno,
 ];
+
+export function getShiftForClass(className: string): ShiftType | null {
+  const trimmed = className.trim();
+  if (CLASSES_BY_SHIFT.matutino.includes(trimmed)) return 'matutino';
+  if (CLASSES_BY_SHIFT.vespertino.includes(trimmed)) return 'vespertino';
+  if (CLASSES_BY_SHIFT.noturno.includes(trimmed)) return 'noturno';
+  return null;
+}
 
 export const COMMON_TEACHERS = [
   'Prof. Marcos Oliveira (História)',
@@ -167,7 +171,7 @@ export function generateInitialBookings(): Booking[] {
     {
       id: 'book-1',
       teacherName: 'Prof. Marcos Oliveira',
-      classroom: '9º Ano B',
+      classroom: '13.01',
       date: dToday,
       dayOfWeek: getDayOfWeekName(dToday),
       shift: 'matutino',
@@ -186,7 +190,7 @@ export function generateInitialBookings(): Booking[] {
     {
       id: 'book-2',
       teacherName: 'Profa. Camila Ferreira',
-      classroom: '7º Ano A',
+      classroom: '14.01',
       date: dToday,
       dayOfWeek: getDayOfWeekName(dToday),
       shift: 'matutino',
@@ -203,7 +207,7 @@ export function generateInitialBookings(): Booking[] {
     {
       id: 'book-3',
       teacherName: 'Profa. Juliana Santos',
-      classroom: '1ª Série EM - A',
+      classroom: '62.01',
       date: dToday,
       dayOfWeek: getDayOfWeekName(dToday),
       shift: 'vespertino',
@@ -212,7 +216,7 @@ export function generateInitialBookings(): Booking[] {
       resourceDetails: {
         biblioteca: { quantity: 1 },
       },
-      theme: 'Círculo de Leitura e Análise de Obras de Machado de Assis',
+      theme: 'Círculo de Leitura e Análise de Obras Literárias',
       observations: 'Reserva exclusiva das mesas centrais da biblioteca.',
       status: 'agendado',
       createdAt: new Date(Date.now() - 86400000).toISOString(),
@@ -220,14 +224,14 @@ export function generateInitialBookings(): Booking[] {
     {
       id: 'book-4',
       teacherName: 'Prof. Ricardo Mendonça',
-      classroom: '8º Ano B',
+      classroom: '23.01',
       date: dTomorrow,
       dayOfWeek: getDayOfWeekName(dTomorrow),
       shift: 'matutino',
       periods: ['2ª Aula (07:50 - 08:40)', '3ª Aula (08:55 - 09:45)'],
       resourceIds: ['chromebook'],
       resourceDetails: {
-        chromebook: { quantity: 1, notes: 'Carrinho completo para 30 alunos' },
+        chromebook: { quantity: 1, notes: 'Carrinho completo com Chromebooks' },
       },
       theme: 'Geometria Espacial e Geogebra nos Chromebooks',
       observations: 'Favor deixar carregados no laboratório.',
@@ -237,43 +241,43 @@ export function generateInitialBookings(): Booking[] {
     {
       id: 'book-5',
       teacherName: 'Profa. Patrícia Alencar',
-      classroom: '2ª Série EM - B',
+      classroom: '72.01',
       date: dTomorrow,
       dayOfWeek: getDayOfWeekName(dTomorrow),
-      shift: 'matutino',
-      periods: ['4ª Aula (09:45 - 10:35)', '5ª Aula (10:35 - 11:25)'],
+      shift: 'vespertino',
+      periods: ['2ª Aula (13:50 - 14:40)', '3ª Aula (14:55 - 15:45)'],
       resourceIds: ['tv', 'cabos'],
       resourceDetails: {
         tv: { quantity: 1 },
         cabos: { quantity: 1 },
       },
-      theme: 'Apresentação dos Projetos de Curta-metragem e Cinema Brasileiro',
-      observations: 'Sala 14 - Levar suporte com rodinhas.',
+      theme: 'Apresentação dos Projetos de Cinema e Artes Visuais',
+      observations: 'Sala de aula - Levar suporte móvel com rodinhas.',
       status: 'agendado',
       createdAt: new Date().toISOString(),
     },
     {
       id: 'book-6',
       teacherName: 'Prof. Tiago Barbosa',
-      classroom: '6º Ano A e B',
+      classroom: '27.01',
       date: dInTwoDays,
       dayOfWeek: getDayOfWeekName(dInTwoDays),
-      shift: 'matutino',
-      periods: ['5ª Aula (10:35 - 11:25)', '6ª Aula (11:25 - 12:15)'],
+      shift: 'noturno',
+      periods: ['1ª Aula (19:00 - 19:45)', '2ª Aula (19:45 - 20:30)'],
       resourceIds: ['patio', 'caixa_som'],
       resourceDetails: {
         patio: { quantity: 1 },
-        caixa_som: { quantity: 1, notes: 'Com 2 microfones sem fio' },
+        caixa_som: { quantity: 1, notes: 'Com microfone sem fio' },
       },
-      theme: 'Festival de Danças Folclóricas Regionais e Expressão Corporal',
-      observations: 'Será utilizado o pátio central e tomadas próximas ao palco.',
+      theme: 'Seminário de Expressão Corporal e Atividade Integrada',
+      observations: 'Pátio coberto.',
       status: 'agendado',
       createdAt: new Date().toISOString(),
     },
     {
       id: 'book-7',
       teacherName: 'Prof. André Luiz',
-      classroom: '3ª Série EM - Terceirão',
+      classroom: '33.01',
       date: dYesterday,
       dayOfWeek: getDayOfWeekName(dYesterday),
       shift: 'matutino',

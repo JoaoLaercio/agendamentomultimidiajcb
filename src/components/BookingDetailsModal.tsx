@@ -99,15 +99,15 @@ export const BookingDetailsModal: React.FC<BookingDetailsModalProps> = ({
           <div className="bg-blue-50/50 border border-blue-200 rounded-xl p-4 space-y-2">
             <div className="flex items-center justify-between">
               <div className="text-xs font-bold text-blue-600 uppercase tracking-wider">
-                Turma & Professor
+                {booking.classroom.includes(',') ? 'Turmas (Aula Conjunta)' : 'Turma'} & Professor
               </div>
               <span className="text-xs bg-white text-blue-800 font-extrabold px-2 py-0.5 rounded border border-blue-200">
                 Turno {booking.shift.toUpperCase()}
               </span>
             </div>
-            <div className="flex items-baseline gap-2">
+            <div className="flex items-baseline gap-2 flex-wrap">
               <span className="text-xl font-black text-slate-900">
-                {booking.classroom}
+                {booking.classroom.includes(',') ? `Turmas ${booking.classroom}` : `Turma ${booking.classroom}`}
               </span>
               <span className="text-slate-400 font-medium">•</span>
               <span className="text-base font-bold text-slate-800">

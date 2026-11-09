@@ -17,6 +17,7 @@ interface HeaderProps {
   onOpenPrintModal: () => void;
   onOpenIntegrationModal: () => void;
   isSupabaseActive: boolean;
+  supabaseStatus?: 'connected' | 'offline' | 'disconnected' | 'connecting';
   totalBookingsCount: number;
   todayBookingsCount: number;
 }
@@ -28,12 +29,16 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenPrintModal,
   onOpenIntegrationModal,
   isSupabaseActive,
+  supabaseStatus = 'connected',
   totalBookingsCount,
   todayBookingsCount,
 }) => {
   const todayStr = toISODateString(new Date());
   const dayOfWeek = getDayOfWeekName(todayStr);
   const formattedToday = formatDateBR(todayStr);
+
+  const isConnected = supabaseStatus === 'connected' || (isSupabaseActive && supabaseStatus !== 'offline');
+  const isOffline = supabaseStatus === 'offline';
 
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs no-print">
@@ -87,22 +92,41 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenIntegrationModal}
             className={`inline-flex items-center gap-2 px-3 py-2 text-xs sm:text-sm font-semibold rounded-lg border transition-colors shadow-xs ${
-              isSupabaseActive
+              isConnected
                 ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                : isOffline
+                ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
                 : 'bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-100 hover:text-slate-900'
             }`}
-            title="Configurar conexão e sincronização com o Supabase"
+            title={
+              isConnected
+                ? 'Supabase conectado e sincronizando em tempo real'
+                : isOffline
+                ? 'Modo Local Ativo (Supabase indisponível no momento). Seus dados estão seguros neste navegador.'
+                : 'Armazenamento local ativo. Clique para conectar ao Supabase.'
+            }
           >
             <Database
               className={`w-4 h-4 ${
-                isSupabaseActive ? 'text-emerald-600' : 'text-slate-500'
+                isConnected
+                  ? 'text-emerald-600'
+                  : isOffline
+                  ? 'text-amber-600'
+                  : 'text-slate-500'
               }`}
             />
             <span className="hidden sm:inline">
-              {isSupabaseActive ? 'Supabase Conectado' : 'Conectar Supabase'}
+              {isConnected
+                ? 'Supabase Conectado'
+                : isOffline
+                ? 'Modo Local (Supabase Offline)'
+                : 'Armazenamento Local'}
             </span>
-            {isSupabaseActive && (
+            {isConnected && (
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse hidden sm:inline-block" />
+            )}
+            {isOffline && (
+              <span className="w-2 h-2 rounded-full bg-amber-500 hidden sm:inline-block" />
             )}
           </button>
 
@@ -117,10 +141,10 @@ export const Header: React.FC<HeaderProps> = ({
 
           <button
             onClick={onOpenNewBooking}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-lg shadow-sm hover:shadow transition-all focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            className="inline-flex items-center gap-2 px-5 py-2.5 text-sm sm:text-base font-black text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl shadow-md hover:shadow-lg transition-all focus:ring-4 focus:ring-emerald-500/30 active:scale-95"
           >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-            <span>Novo Agendamento</span>
+            <Plus className="w-5 h-5 stroke-[3]" />
+            <span>+ NOVO AGENDAMENTO</span>
           </button>
         </div>
       </div>
@@ -130,28 +154,28 @@ export const Header: React.FC<HeaderProps> = ({
         <nav className="flex space-x-1 sm:space-x-4 border-t border-slate-100 pt-1 overflow-x-auto">
           <button
             onClick={() => onViewChange('weekly')}
-            className={`flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold border-b-2 whitespace-nowrap transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-extrabold border-b-2 whitespace-nowrap transition-colors ${
               currentView === 'weekly'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
             }`}
           >
             <CalendarDays className="w-4 h-4" />
-            <span>Grade Semanal</span>
+            <span>Grade da Semana</span>
           </button>
 
           <button
             onClick={() => onViewChange('daily')}
-            className={`flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold border-b-2 whitespace-nowrap transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-extrabold border-b-2 whitespace-nowrap transition-colors ${
               currentView === 'daily'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
             }`}
           >
             <ListFilter className="w-4 h-4" />
-            <span>Agenda do Dia</span>
+            <span>Agenda de Hoje</span>
             {todayBookingsCount > 0 && (
-              <span className="ml-1 px-1.5 py-0.2 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">
+              <span className="ml-1 px-2 py-0.2 bg-blue-100 text-blue-700 rounded-full text-xs font-black">
                 {todayBookingsCount}
               </span>
             )}
@@ -159,29 +183,26 @@ export const Header: React.FC<HeaderProps> = ({
 
           <button
             onClick={() => onViewChange('catalog')}
-            className={`flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold border-b-2 whitespace-nowrap transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-extrabold border-b-2 whitespace-nowrap transition-colors ${
               currentView === 'catalog'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
             }`}
           >
             <Layers className="w-4 h-4" />
-            <span>Recursos & Espaços (8)</span>
+            <span>Equipamentos & Espaços</span>
           </button>
 
           <button
             onClick={() => onViewChange('stats')}
-            className={`flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold border-b-2 whitespace-nowrap transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-extrabold border-b-2 whitespace-nowrap transition-colors ${
               currentView === 'stats'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
             }`}
           >
             <Sparkles className="w-4 h-4" />
-            <span>Painel & Relatórios</span>
-            <span className="text-xs text-slate-400 font-normal">
-              ({totalBookingsCount} no total)
-            </span>
+            <span>Painel & Banco</span>
           </button>
         </nav>
       </div>

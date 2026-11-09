@@ -110,9 +110,11 @@ export const DailyAgendaView: React.FC<DailyAgendaViewProps> = ({
               <Clock className="w-3.5 h-3.5 text-blue-600" />
               {booking.periods.join(' • ')}
             </span>
-            <span className="inline-flex items-center gap-1 bg-slate-800 text-white text-xs font-bold px-2.5 py-1 rounded-md">
-              <GraduationCap className="w-3.5 h-3.5" />
-              Turma: {booking.classroom}
+            <span className={`inline-flex items-center gap-1 ${
+              booking.classroom.includes(',') ? 'bg-indigo-600' : 'bg-blue-600'
+            } text-white text-xs sm:text-sm font-black px-3 py-1 rounded-lg shadow-xs`}>
+              <GraduationCap className="w-4 h-4" />
+              {booking.classroom.includes(',') ? 'Turmas' : 'Turma'} {booking.classroom}
             </span>
             <span className="text-sm font-bold text-slate-900 flex items-center gap-1.5 ml-1">
               <User className="w-4 h-4 text-slate-400" />
