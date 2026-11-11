@@ -21,11 +21,17 @@ interface AdminAuthModalProps {
 
 export const ADMIN_PIN_KEY = 'edumidia_admin_pin';
 export const ADMIN_AUTH_KEY = 'edumidia_admin_auth';
-export const DEFAULT_ADMIN_PIN = '1234';
+export const DEFAULT_ADMIN_PIN = 'Jo19ao09#';
 
 export function getStoredAdminPin(): string {
   if (typeof window === 'undefined') return DEFAULT_ADMIN_PIN;
-  return localStorage.getItem(ADMIN_PIN_KEY) || DEFAULT_ADMIN_PIN;
+  const stored = localStorage.getItem(ADMIN_PIN_KEY);
+  // Migrate from old temporary '1234' default to the user's permanent password
+  if (!stored || stored === '1234') {
+    localStorage.setItem(ADMIN_PIN_KEY, DEFAULT_ADMIN_PIN);
+    return DEFAULT_ADMIN_PIN;
+  }
+  return stored;
 }
 
 export function isUserAdmin(): boolean {
@@ -69,7 +75,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
       onSuccess();
       onClose();
     } else {
-      setError('Senha incorreta! Tente novamente (Dica: Senha padrão inicial é 1234).');
+      setError('Senha incorreta! Digite a senha de administrador.');
     }
   };
 
@@ -105,7 +111,6 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
   const handleResetToDefault = () => {
     localStorage.setItem(ADMIN_PIN_KEY, DEFAULT_ADMIN_PIN);
     setError(null);
-    alert('A senha foi redefinida para a senha padrão: 1234');
   };
 
   return (
@@ -170,11 +175,8 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                   </button>
                 </div>
                 <div className="mt-2 p-2.5 bg-blue-50/70 border border-blue-200 rounded-xl text-[11px] text-blue-900 leading-relaxed">
-                  <span className="font-extrabold block mb-0.5">💡 Proteção Ativa:</span>
-                  Qualquer professor ou visitante pode agendar aulas normalmente, mas apenas você com esta senha pode alterar o banco de dados Supabase e as configurações.
-                  <div className="mt-1 font-semibold text-blue-800">
-                    Senha padrão inicial: <code className="bg-blue-100 px-1 py-0.2 rounded font-black">1234</code>
-                  </div>
+                  <span className="font-extrabold block mb-0.5">🔒 Segurança Reforçada:</span>
+                  Professores e alunos podem realizar agendamentos normalmente. Apenas quem possuir a senha de administrador pode alterar credenciais do banco, chaves de API e configurações.
                 </div>
               </div>
 
