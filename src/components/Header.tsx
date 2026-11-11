@@ -7,6 +7,8 @@ import {
   Layers,
   GraduationCap,
   Database,
+  Lock,
+  ShieldCheck,
 } from 'lucide-react';
 import { formatDateBR, getDayOfWeekName, toISODateString } from '../utils/dateUtils';
 
@@ -20,6 +22,10 @@ interface HeaderProps {
   supabaseStatus?: 'connected' | 'offline' | 'disconnected' | 'connecting';
   totalBookingsCount: number;
   todayBookingsCount: number;
+  isAdmin: boolean;
+  onUnlockAdmin: () => void;
+  onLockAdmin: () => void;
+  onOpenChangePin: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -32,6 +38,10 @@ export const Header: React.FC<HeaderProps> = ({
   supabaseStatus = 'connected',
   totalBookingsCount,
   todayBookingsCount,
+  isAdmin,
+  onUnlockAdmin,
+  onLockAdmin,
+  onOpenChangePin,
 }) => {
   const todayStr = toISODateString(new Date());
   const dayOfWeek = getDayOfWeekName(todayStr);
@@ -54,11 +64,46 @@ export const Header: React.FC<HeaderProps> = ({
             Controle de Mídias, Equipamentos e Ambientes de Aprendizagem
           </span>
         </div>
-        <div className="flex items-center gap-4 text-slate-300 font-medium">
+        <div className="flex items-center flex-wrap gap-2 sm:gap-3 text-slate-300 font-medium">
           <div className="flex items-center gap-1.5">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             <span>Hoje: {dayOfWeek}, {formattedToday}</span>
           </div>
+
+          {/* Admin Lock / Unlock Status Toggle */}
+          {isAdmin ? (
+            <div className="flex items-center gap-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 px-2.5 py-0.5 rounded-full text-[11px] font-bold">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Admin Ativo</span>
+              <button
+                type="button"
+                onClick={onOpenChangePin}
+                className="text-slate-300 hover:text-white underline text-[10px] ml-1"
+                title="Mudar senha do administrador"
+              >
+                Trocar Senha
+              </button>
+              <button
+                type="button"
+                onClick={onLockAdmin}
+                className="bg-red-500/30 hover:bg-red-500/50 text-red-200 px-1.5 py-0.2 rounded text-[10px] ml-1 transition-colors"
+                title="Bloquear configurações (Sair do Modo Admin)"
+              >
+                Bloquear
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onUnlockAdmin}
+              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 hover:border-amber-400/50 px-2.5 py-0.5 rounded-full text-[11px] font-bold transition-colors"
+              title="Apenas o administrador pode alterar configurações. Clique para entrar com senha."
+            >
+              <Lock className="w-3 h-3 text-amber-400" />
+              <span>Área do Administrador</span>
+            </button>
+          )}
+
           <span className="hidden md:inline bg-slate-800 text-slate-300 px-2 py-0.5 rounded text-[11px]">
             {todayBookingsCount} {todayBookingsCount === 1 ? 'agendamento hoje' : 'agendamentos hoje'}
           </span>
@@ -90,7 +135,13 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Action Controls */}
         <div className="flex items-center flex-wrap gap-2.5">
           <button
-            onClick={onOpenIntegrationModal}
+            onClick={() => {
+              if (isAdmin) {
+                onOpenIntegrationModal();
+              } else {
+                onUnlockAdmin();
+              }
+            }}
             className={`inline-flex items-center gap-2 px-3 py-2 text-xs sm:text-sm font-semibold rounded-lg border transition-colors shadow-xs ${
               isConnected
                 ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
@@ -99,11 +150,9 @@ export const Header: React.FC<HeaderProps> = ({
                 : 'bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-100 hover:text-slate-900'
             }`}
             title={
-              isConnected
-                ? 'Supabase conectado e sincronizando em tempo real'
-                : isOffline
-                ? 'Modo Local Ativo (Supabase indisponível no momento). Seus dados estão seguros neste navegador.'
-                : 'Armazenamento local ativo. Clique para conectar ao Supabase.'
+              isAdmin
+                ? 'Clique para configurar Supabase e chaves'
+                : 'Configurações restritas: clique para entrar com a senha de administrador'
             }
           >
             <Database
@@ -122,10 +171,16 @@ export const Header: React.FC<HeaderProps> = ({
                 ? 'Modo Local (Supabase Offline)'
                 : 'Armazenamento Local'}
             </span>
-            {isConnected && (
+            {!isAdmin && (
+              <span className="inline-flex items-center gap-1 text-[10px] bg-slate-200/80 text-slate-700 px-1.5 py-0.2 rounded font-bold" title="Bloqueado para visitantes">
+                <Lock className="w-2.5 h-2.5 text-slate-500" />
+                Restrito
+              </span>
+            )}
+            {isAdmin && isConnected && (
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse hidden sm:inline-block" />
             )}
-            {isOffline && (
+            {isAdmin && isOffline && (
               <span className="w-2 h-2 rounded-full bg-amber-500 hidden sm:inline-block" />
             )}
           </button>

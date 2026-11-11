@@ -14,6 +14,7 @@ import {
   Database,
   Cloud,
   GitBranch,
+  Lock,
 } from 'lucide-react';
 import { Booking, Resource } from '../types';
 import { ResourceIcon } from './ResourceIcon';
@@ -26,6 +27,8 @@ interface StatsViewProps {
   onClearAll: () => void;
   onExportJSON: () => void;
   isSupabaseActive: boolean;
+  isAdmin: boolean;
+  onUnlockAdmin: () => void;
 }
 
 export const StatsView: React.FC<StatsViewProps> = ({
@@ -36,6 +39,8 @@ export const StatsView: React.FC<StatsViewProps> = ({
   onClearAll,
   onExportJSON,
   isSupabaseActive,
+  isAdmin,
+  onUnlockAdmin,
 }) => {
   const totalBookings = bookings.length;
   const activeBookings = bookings.filter(b => b.status === 'em_uso').length;
@@ -98,11 +103,26 @@ export const StatsView: React.FC<StatsViewProps> = ({
         </div>
 
         <button
-          onClick={onOpenIntegrationModal}
-          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm"
+          onClick={() => {
+            if (isAdmin) {
+              onOpenIntegrationModal();
+            } else {
+              onUnlockAdmin();
+            }
+          }}
+          className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white rounded-xl transition-all shadow-sm ${
+            isAdmin
+              ? 'bg-blue-600 hover:bg-blue-700'
+              : 'bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300'
+          }`}
+          title={
+            isAdmin
+              ? 'Configurar Supabase & Deploy'
+              : 'Configurações restritas. Clique para entrar com a senha de administrador.'
+          }
         >
-          <Cloud className="w-4 h-4" />
-          Configurar Supabase & Deploy
+          {isAdmin ? <Cloud className="w-4 h-4" /> : <Lock className="w-4 h-4 text-amber-400" />}
+          <span>{isAdmin ? 'Configurar Supabase & Deploy' : 'Desbloquear Configurações (Admin)'}</span>
         </button>
       </div>
 
@@ -249,36 +269,85 @@ export const StatsView: React.FC<StatsViewProps> = ({
 
       {/* Backup and Maintenance Section */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-        <h4 className="text-sm font-extrabold text-slate-900 mb-2">
-          Gerenciamento de Dados & Backup
-        </h4>
-        <p className="text-xs text-slate-500 mb-4">
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="text-sm font-extrabold text-slate-900">
+            Gerenciamento de Dados & Backup
+          </h4>
+          {!isAdmin && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+              <Lock className="w-3 h-3 text-amber-600" />
+              Ações Restritas ao Administrador
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-slate-500 mb-3.5">
           Exporte os agendamentos escolares em formato JSON para cópia de segurança ou restaure o
           estado inicial da demonstração pedagógica.
         </p>
+
+        {!isAdmin && (
+          <div className="mb-3.5 p-3 bg-amber-50/80 border border-amber-200 text-amber-900 rounded-xl text-xs font-semibold flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Lock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+              <span>
+                <strong>Modo Protegido:</strong> Apenas o administrador com senha pode restaurar ou apagar o banco de dados.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={onUnlockAdmin}
+              className="text-[11px] font-extrabold text-amber-900 underline hover:text-black whitespace-nowrap"
+            >
+              Entrar como Admin
+            </button>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={onExportJSON}
             className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors shadow-2xs"
+            title="Qualquer usuário pode baixar uma cópia de segurança dos agendamentos"
           >
             <Download className="w-3.5 h-3.5 text-slate-600" />
             Baixar Backup (JSON)
           </button>
 
           <button
-            onClick={onResetData}
-            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded-lg transition-colors"
+            onClick={() => {
+              if (isAdmin) {
+                onResetData();
+              } else {
+                onUnlockAdmin();
+              }
+            }}
+            className={`inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-lg transition-colors ${
+              isAdmin
+                ? 'text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100'
+                : 'text-slate-600 bg-slate-100 border border-slate-200 hover:bg-slate-200'
+            }`}
+            title={isAdmin ? 'Restaurar dados de exemplo' : 'Restrito ao administrador'}
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            {!isAdmin ? <Lock className="w-3.5 h-3.5 text-slate-500" /> : <RefreshCw className="w-3.5 h-3.5" />}
             Restaurar Dados de Exemplo
           </button>
 
           <button
-            onClick={onClearAll}
-            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 rounded-lg transition-colors ml-auto"
+            onClick={() => {
+              if (isAdmin) {
+                onClearAll();
+              } else {
+                onUnlockAdmin();
+              }
+            }}
+            className={`inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-lg transition-colors ml-auto ${
+              isAdmin
+                ? 'text-red-700 bg-red-50 border border-red-200 hover:bg-red-100'
+                : 'text-slate-600 bg-slate-100 border border-slate-200 hover:bg-slate-200'
+            }`}
+            title={isAdmin ? 'Limpar todos os agendamentos' : 'Restrito ao administrador'}
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            {!isAdmin ? <Lock className="w-3.5 h-3.5 text-slate-500" /> : <Trash2 className="w-3.5 h-3.5" />}
             Limpar Todos os Agendamentos
           </button>
         </div>

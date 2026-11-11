@@ -20,6 +20,11 @@ import {
 } from './lib/supabase';
 import { toISODateString } from './utils/dateUtils';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
+import {
+  AdminAuthModal,
+  isUserAdmin,
+  setAdminAuth,
+} from './components/AdminAuthModal';
 
 const LOCAL_STORAGE_KEY = 'edumidia_bookings_data';
 
@@ -52,6 +57,37 @@ export default function App() {
   const [bookingForVoucher, setBookingForVoucher] = useState<Booking | null>(null);
 
   const [isIntegrationModalOpen, setIsIntegrationModalOpen] = useState(false);
+
+  // Admin authentication state & modals
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => isUserAdmin());
+  const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(false);
+  const [adminAuthMode, setAdminAuthMode] = useState<'login' | 'change_pin'>('login');
+
+  const handleUnlockAdmin = () => {
+    setAdminAuthMode('login');
+    setIsAdminAuthModalOpen(true);
+  };
+
+  const handleOpenChangePin = () => {
+    setAdminAuthMode('change_pin');
+    setIsAdminAuthModalOpen(true);
+  };
+
+  const handleLockAdmin = () => {
+    setAdminAuth(false);
+    setIsAdmin(false);
+    showToast('Modo Administrador bloqueado. As configurações estão protegidas.', 'info');
+  };
+
+  const handleAdminSuccess = () => {
+    setIsAdmin(true);
+    showToast(
+      adminAuthMode === 'login'
+        ? 'Modo Administrador ativado! Configurações liberadas.'
+        : 'Nova senha de administrador salva com sucesso!',
+      'success'
+    );
+  };
 
   // In-app confirmation dialog (replaces window.confirm for iframe safety)
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -401,6 +437,10 @@ export default function App() {
         supabaseStatus={supabaseStatus}
         totalBookingsCount={bookings.length}
         todayBookingsCount={todayBookingsCount}
+        isAdmin={isAdmin}
+        onUnlockAdmin={handleUnlockAdmin}
+        onLockAdmin={handleLockAdmin}
+        onOpenChangePin={handleOpenChangePin}
       />
 
       {/* Main View Container */}
@@ -442,6 +482,8 @@ export default function App() {
             onClearAll={handleClearAll}
             onExportJSON={handleExportJSON}
             isSupabaseActive={isSupabaseActive}
+            isAdmin={isAdmin}
+            onUnlockAdmin={handleUnlockAdmin}
           />
         )}
       </main>
@@ -557,6 +599,15 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Admin Authentication & Change PIN Modal */}
+      <AdminAuthModal
+        isOpen={isAdminAuthModalOpen}
+        onClose={() => setIsAdminAuthModalOpen(false)}
+        mode={adminAuthMode}
+        onSuccess={handleAdminSuccess}
+        onChangeMode={mode => setAdminAuthMode(mode)}
+      />
     </div>
   );
 }
